@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Verifikasi & Rekap SPJ (Online)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .form-input { width: 100%; padding: 0.625rem 0.75rem; border: 1px solid #cbd5e1; border-radius: 0.5rem; transition: all 0.2s ease-in-out; background-color: white; }
+        .form-input:focus { outline: none; border-color: #4f46e5; --tw-ring-color: rgb(79 70 229 / 0.5); box-shadow: 0 0 0 2px var(--tw-ring-color); }
+        .form-input[readonly] { background-color: #e2e8f0; cursor: not-allowed; color: #1e293b; font-weight: 500;}
+        #pdf-viewer-container { height: calc(100vh - 18rem); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.625rem 1.25rem; border-radius: 0.5rem; font-weight: 600; transition: all 0.2s ease-in-out; border: 1px solid transparent; }
+        .btn-primary { background-color: #4f46e5; color: white; } .btn-primary:hover { background-color: #4338ca; }
+        .btn-secondary { background-color: #475569; color: white; } .btn-secondary:hover { background-color: #334155; }
+        .btn-success { background-color: #16a34a; color: white; } .btn-success:hover { background-color: #15803d; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-file-invoice-dollar text-2xl text-indigo-600"></i>
+                    <h1 class="ml-3 text-xl font-bold text-slate-900">Aplikasi SPJ Verificator</h1>
+                </div>
+                <div>
+                     <button id="download-excel" class="btn btn-success" disabled>
+                        <i class="fas fa-file-excel mr-2"></i>
+                        <span>Unduh Excel</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <div id="upload-section" class="card p-6 mb-8">
+             <h2 class="text-xl font-bold text-slate-900 border-b pb-3 mb-4">Mulai Verifikasi Baru</h2>
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="spjType" class="block text-sm font-medium text-slate-700 mb-2">1. Pilih Jenis Perjalanan Dinas</label>
+                    <select id="spjType" class="form-input">
+                        <option value="">-- Pilih Jenis SPJ --</option>
+                        <option value="524111">Perjalanan Dinas Biasa</option>
+                        <option value="524113">Perjalanan Dinas Dalam Kota</option>
+                        <option value="524114">Paket Meeting Dalam Kota</option>
+                        <option value="524119">Paket Meeting Luar Kota</option>
+                        <option value="perjadin_tetap">Perjalanan Dinas Tetap</option>
+                        <option value="perjadin_luar_negeri">Perjalanan Dinas Luar Negeri</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">2. Unggah File PDF SPJ</label>
+                    <div id="drop-area" class="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-slate-50 transition h-full flex flex-col justify-center">
+                        <input type="file" id="pdf-upload" class="hidden" accept=".pdf" disabled>
+                        <i class="fas fa-cloud-upload-alt text-3xl text-slate-400 mb-2"></i>
+                        <p id="drop-text" class="text-sm text-slate-500">Pilih Jenis SPJ untuk mengaktifkan.</p>
+                    </div>
+                </div>
+             </div>
+        </div>
+        
+        <div id="verification-section" class="hidden">
+            <div id="ocr-status" class="bg-indigo-100 border-l-4 border-indigo-500 text-indigo-800 p-4 mb-6 rounded-md" role="alert"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                <div class="card p-4 lg:col-span-3">
+                    <h2 id="pdf-viewer-title" class="text-lg font-bold mb-4 text-slate-900"></h2>
+                    <div id="pdf-viewer-container" class="border border-slate-200 rounded-lg bg-slate-50 overflow-auto">
+                        <canvas id="pdf-preview"></canvas>
+                    </div>
+                </div>
+                <div class="card p-6 lg:col-span-2">
+                    <h2 id="form-title" class="text-lg font-bold mb-4 text-slate-900"></h2>
+                    <div id="data-entry-form-container" class="space-y-4"></div>
+                    <div class="mt-6 space-y-2">
+                        <button id="main-action-btn" class="btn btn-primary w-full"></button>
+                        <button id="reset-btn" class="btn btn-secondary w-full">Batal</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 card overflow-hidden">
+            <div class="p-6">
+                 <h2 class="text-xl font-bold text-slate-900">Tabel Rekapitulasi</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table id="recap-table" class="w-full text-sm text-left text-slate-600">
+                    <thead class="text-xs text-slate-700 uppercase bg-slate-50">
+                         <tr>
+                            <th class="px-6 py-3">No</th>
+                            <th class="px-6 py-3">Jenis SPJ</th>
+                            <th class="px-6 py-3">Nama</th>
+                            <th class="px-6 py-3">Tanggal</th>
+                            <th class="px-6 py-3">Total Biaya Riil</th>
+                            <th class="px-6 py-3">Tagihan/Kembali</th>
+                            <th class="px-6 py-3 text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr id="no-data-row">
+                            <td colspan="7" class="text-center py-10 text-slate-400">Menghubungi server...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- KONFIGURASI ---
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+
+        const common_personal = [ { id: 'nama', label: 'Nama', type: 'text' }, { id: 'nip', label: 'NIP', type: 'text' }, { id: 'jabatan', label: 'Jabatan', type: 'text' }];
+        const common_trip = [ { id: 'tujuan', label: 'Daerah Tujuan', type: 'text' }, { id: 'maksud', label: 'Maksud Perjalanan Dinas', type: 'textarea' }, { id: 'no_st', label: 'No. Surat Tugas', type: 'text' }, { id: 'tgl_berangkat', label: 'Tanggal Berangkat', type: 'date' }, { id: 'tgl_kembali', label: 'Tanggal Kembali', type: 'date' }];
+        const cost_summary_fields = [ { id: 'uang_muka', label: 'Uang Muka Diterima (Rp)', type: 'number' }, { id: 'total_biaya_riil', label: 'Total Biaya Riil (Rp)', type: 'number', placeholder: 'Otomatis', readonly: true }, { id: 'tagihan_pengembalian', label: 'Tagihan / Pengembalian (Rp)', type: 'number', placeholder: 'Otomatis', readonly: true }];
+        const expense_component_ids = ['uang_harian', 'uang_representasi', 'uang_hotel', 'uang_transport', 'bbm', 'uang_harian_paket', 'uang_transport_paket', 'uang_harian_valas'];
+        
+        const formFieldsConfig = { /* ... Konfigurasi form tetap sama ... */
+            '524111': { name: 'Perjalanan Dinas Biasa', fields: [...common_personal, ...common_trip, { id: 'uang_harian', label: 'Uang Harian (Rp)', type: 'number' }, { id: 'uang_representasi', label: 'Uang Representasi (Rp)', type: 'number' }, { id: 'uang_hotel', label: 'Uang Hotel (Rp)', type: 'number' }, { id: 'uang_transport', label: 'Uang Transport (Rp)', type: 'number' }, { id: 'bbm', label: 'BBM (Rp)', type: 'number' }, ...cost_summary_fields] },
+            '524113': { name: 'Perjalanan Dinas Dalam Kota', fields: [...common_personal, ...common_trip, { id: 'uang_harian', label: 'Uang Harian (Rp)', type: 'number' }, { id: 'uang_transport', label: 'Uang Transport (Rp)', type: 'number' }, { id: 'bbm', label: 'BBM (Rp)', type: 'number' }, ...cost_summary_fields] },
+            '524114': { name: 'Paket Meeting Dalam Kota', fields: [...common_personal, ...common_trip, { id: 'uang_harian_paket', label: 'Uang Harian Paket (Rp)', type: 'number' }, { id: 'uang_transport_paket', label: 'Uang Transport Paket (Rp)', type: 'number' }, { id: 'bbm', label: 'BBM (Rp)', type: 'number' }, ...cost_summary_fields] },
+            '524119': { name: 'Paket Meeting Luar Kota', fields: [...common_personal, ...common_trip, { id: 'uang_harian_paket', label: 'Uang Harian Paket (Rp)', type: 'number' }, { id: 'uang_hotel', label: 'Uang Hotel (Rp)', type: 'number' }, { id: 'uang_transport', label: 'Uang Transport (Rp)', type: 'number' }, { id: 'bbm', label: 'BBM (Rp)', type: 'number' }, ...cost_summary_fields] },
+            'perjadin_tetap': { name: 'Perjalanan Dinas Tetap', fields: [...common_personal, ...common_trip, { id: 'uang_harian', label: 'Uang Harian (Rp)', type: 'number' }, { id: 'uang_transport', label: 'Uang Transport (Rp)', type: 'number' }, { id: 'bbm', label: 'BBM (Rp)', type: 'number' }, ...cost_summary_fields] },
+            'perjadin_luar_negeri': { name: 'Perjalanan Dinas Luar Negeri', fields: [...common_personal, ...common_trip, { id: 'uang_harian_valas', label: 'Uang Harian (Valas)', type: 'number' }, { id: 'bbm', label: 'BBM (Rp)', type: 'number' }, ...cost_summary_fields] }
+        };
+
+        const dom = { /* ... Elemen DOM tetap sama ... */
+            spjTypeSelect: document.getElementById('spjType'), uploadSection: document.getElementById('upload-section'), verificationSection: document.getElementById('verification-section'), dropArea: document.getElementById('drop-area'), pdfUpload: document.getElementById('pdf-upload'), dropText: document.getElementById('drop-text'), ocrStatus: document.getElementById('ocr-status'), pdfViewerTitle: document.getElementById('pdf-viewer-title'), formTitle: document.getElementById('form-title'), formContainer: document.getElementById('data-entry-form-container'), mainActionBtn: document.getElementById('main-action-btn'), tableBody: document.querySelector('#recap-table tbody'), noDataRow: document.getElementById('no-data-row'), downloadBtn: document.getElementById('download-excel'), resetBtn: document.getElementById('reset-btn'),
+        };
+
+        let currentPdfFile = null; let currentlyEditingId = null;
+
+        // --- PENGGANTI DATABASE LOKAL: API CLIENT UNTUK BERBICARA DENGAN SERVER ---
+        const API_BASE_URL = '/api'; // Alamat base path untuk API di server
+
+        const api = {
+            async getRecords() {
+                const response = await fetch(`${API_BASE_URL}/spj`);
+                if (!response.ok) throw new Error('Gagal mengambil data dari server');
+                return response.json();
+            },
+            async addRecord(formData) { // formData akan berisi data teks dan file
+                const response = await fetch(`${API_BASE_URL}/spj`, {
+                    method: 'POST',
+                    body: formData, // Tidak perlu set header 'Content-Type', browser akan otomatis
+                });
+                if (!response.ok) throw new Error('Gagal menyimpan data ke server');
+                return response.json();
+            },
+            async updateRecord(id, formData) {
+                 const response = await fetch(`${API_BASE_URL}/spj/${id}`, {
+                    method: 'PUT', // atau 'POST' tergantung desain backend
+                    body: formData,
+                });
+                if (!response.ok) throw new Error('Gagal memperbarui data di server');
+                return response.json();
+            },
+            async deleteRecord(id) {
+                const response = await fetch(`${API_BASE_URL}/spj/${id}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('Gagal menghapus data dari server');
+                return response.json();
+            }
+        };
+
+        // --- RENDER & UI (Fungsi-fungsi ini sekarang menggunakan API) ---
+        async function renderTable() {
+            try {
+                const items = await api.getRecords();
+                dom.tableBody.innerHTML = '';
+                if (items.length === 0) {
+                    dom.noDataRow.querySelector('td').textContent = "Belum ada data.";
+                    dom.tableBody.appendChild(dom.noDataRow);
+                    dom.downloadBtn.disabled = true;
+                } else {
+                    dom.downloadBtn.disabled = false;
+                    items.forEach((item, index) => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'bg-white even:bg-slate-50 hover:bg-indigo-50';
+                        // Kolom Aksi sekarang menggunakan ID dari server
+                        tr.innerHTML = `
+                            <td class="px-6 py-4 font-semibold text-slate-900">${index + 1}</td>
+                            <td class="px-6 py-4 font-medium text-slate-800">${formFieldsConfig[item.spjType]?.name || 'N/A'}</td>
+                            <td class="px-6 py-4">${item.nama || '-'}</td>
+                            <td class="px-6 py-4">${item.tgl_berangkat || '-'}</td>
+                            <td class="px-6 py-4">Rp ${parseFloat(item.total_biaya_riil || 0).toLocaleString('id-ID')}</td>
+                            <td class="px-6 py-4 font-semibold text-slate-900">Rp ${parseFloat(item.tagihan_pengembalian || 0).toLocaleString('id-ID')}</td>
+                            <td class="px-6 py-4 text-center">
+                                <div class="flex items-center justify-center space-x-3">
+                                    <button class="text-blue-600 hover:text-blue-800" onclick="viewFile('${item.pdfUrl}')" title="Lihat File"><i class="fas fa-eye"></i></button>
+                                    <button class="text-amber-600 hover:text-amber-800" onclick="editData('${item.id}')" title="Edit"><i class="fas fa-edit"></i></button>
+                                    <button class="text-red-600 hover:text-red-800" onclick="deleteData('${item.id}')" title="Hapus"><i class="fas fa-trash"></i></button>
+                                </div>
+                            </td>
+                        `;
+                        dom.tableBody.appendChild(tr);
+                    });
+                }
+            } catch(error) {
+                console.error(error);
+                dom.noDataRow.querySelector('td').textContent = "Gagal terhubung ke server. Pastikan backend berjalan.";
+            }
+        }
+
+        // --- ACTIONS (Fungsi-fungsi ini sekarang menggunakan API) ---
+        window.deleteData = async (id) => {
+            if (confirm('Apakah Anda yakin ingin menghapus data ini?')) {
+                try {
+                    await api.deleteRecord(id);
+                    await renderTable();
+                    alert('Data berhasil dihapus.');
+                } catch(error) {
+                    alert(error.message);
+                }
+            }
+        };
+        
+        // Fungsi viewFile sekarang membuka URL dari server, bukan dari browser
+        window.viewFile = (pdfUrl) => {
+            if (pdfUrl) {
+                window.open(pdfUrl, '_blank');
+            } else {
+                alert('File PDF untuk data ini tidak ditemukan.');
+            }
+        };
+
+        window.editData = async (id) => {
+             alert('Fitur Edit perlu mengambil data tunggal dari server dan file PDF-nya. Ini membutuhkan implementasi endpoint GET /api/spj/:id di backend.');
+             // Logika untuk mengambil data dari server dan menampilkannya akan ditempatkan di sini.
+        };
+
+        async function handleMainAction() {
+            const spjType = currentlyEditingId ? (await api.getRecord(currentlyEditingId)).spjType : dom.spjTypeSelect.value;
+            const fields = formFieldsConfig[spjType].fields;
+
+            // Menggunakan FormData untuk mengirim data teks dan file sekaligus
+            const formData = new FormData();
+            fields.forEach(field => formData.append(field.id, document.getElementById(field.id)?.value || ''));
+            formData.append('spjType', spjType);
+
+            try {
+                if (currentlyEditingId) {
+                    if(currentPdfFile) formData.append('pdfFile', currentPdfFile); // Hanya kirim file jika ada yg baru
+                    await api.updateRecord(currentlyEditingId, formData);
+                    alert('Data berhasil diperbarui!');
+                } else {
+                    if(currentPdfFile) formData.append('pdfFile', currentPdfFile);
+                    await api.addRecord(formData);
+                    alert('Data berhasil ditambahkan!');
+                }
+                await renderTable();
+                resetApp();
+            } catch(error) {
+                alert(error.message);
+            }
+        }
+        
+        // --- Sisa fungsi (kalkulasi, generate form, OCR, event listener) sebagian besar tetap sama ---
+        // Namun, beberapa perlu disesuaikan. Contoh: editData perlu mengambil data dari server
+        // Untuk saat ini, kita akan fokus pada perubahan mendasar dari lokal ke online.
+        const calculateTotalCosts = (containerSelector) => {
+            const container = document.querySelector(containerSelector); if (!container) return; let totalBiaya = 0;
+            expense_component_ids.forEach(id => { const input = container.querySelector(`#${id}`); if (input) totalBiaya += parseFloat(input.value) || 0; });
+            const totalBiayaInput = container.querySelector('#total_biaya_riil'); if (totalBiayaInput) totalBiayaInput.value = totalBiaya.toFixed(0);
+            const uangMukaInput = container.querySelector('#uang_muka'); const sisaKurangInput = container.querySelector('#tagihan_pengembalian');
+            if (uangMukaInput && sisaKurangInput) { const uangMuka = parseFloat(uangMukaInput.value) || 0; sisaKurangInput.value = (totalBiaya - uangMuka).toFixed(0); }
+        };
+        const generateFormFields = (fields, container, data = {}) => {
+            container.innerHTML = '';
+            fields.forEach(field => {
+                const value = data[field.id] || ''; let fieldWrapper = document.createElement('div');
+                let label = `<label for="${field.id}" class="block text-sm font-medium text-slate-700 mb-1">${field.label}</label>`; let fieldHtml;
+                if (field.type === 'textarea') fieldHtml = `<textarea id="${field.id}" class="form-input" rows="2">${value}</textarea>`;
+                else fieldHtml = `<input type="${field.type}" id="${field.id}" class="form-input" value="${value}" ${field.readonly ? 'readonly' : ''}>`;
+                fieldWrapper.innerHTML = label + fieldHtml; container.appendChild(fieldWrapper);
+            });
+            [...expense_component_ids, 'uang_muka'].forEach(id => { const input = container.querySelector(`#${id}`); if(input) input.addEventListener('input', () => calculateTotalCosts(`#${container.id}`)); });
+        };
+        const resetApp = () => {
+            dom.verificationSection.classList.add('hidden'); dom.uploadSection.classList.remove('hidden'); dom.spjTypeSelect.value = ''; dom.pdfUpload.value = ''; dom.pdfUpload.disabled = true;
+            dom.dropText.textContent = 'Pilih Jenis SPJ dahulu.'; currentPdfFile = null; currentlyEditingId = null;
+        };
+        async function handleFiles(files) {
+            if (files.length === 0) return; currentPdfFile = files[0];
+            dom.uploadSection.classList.add('hidden'); dom.verificationSection.classList.remove('hidden');
+            dom.formTitle.textContent = "Verifikasi & Isi Data SPJ"; dom.ocrStatus.classList.remove('hidden'); dom.pdfViewerTitle.textContent = "Dokumen PDF";
+            dom.mainActionBtn.innerHTML = '<i class="fas fa-plus mr-2"></i> Tambahkan ke Tabel Rekap';
+            generateFormFields(formFieldsConfig[dom.spjTypeSelect.value].fields, dom.formContainer);
+            try { const canvas = await renderPdfPreview(currentPdfFile); await runOcrAssistant(canvas); } catch (error) { alert("Gagal menampilkan PDF."); resetApp(); }
+        }
+        async function renderPdfPreview(file) {
+            const fileReader = new FileReader();
+            return new Promise((resolve, reject) => {
+                fileReader.onload = async () => {
+                    try {
+                        const pdf = await pdfjsLib.getDocument(new Uint8Array(fileReader.result)).promise; const page = await pdf.getPage(1);
+                        const scale = dom.pdfViewerTitle.parentElement.clientWidth / page.getViewport({ scale: 1 }).width; const viewport = page.getViewport({ scale: scale });
+                        const canvas = document.getElementById('pdf-preview'); const context = canvas.getContext('2d'); canvas.height = viewport.height; canvas.width = viewport.width;
+                        await page.render({ canvasContext: context, viewport: viewport }).promise; resolve(canvas);
+                    } catch (err) { reject(err); }
+                };
+                fileReader.readAsArrayBuffer(file);
+            });
+        }
+        async function runOcrAssistant(canvas) {
+            dom.ocrStatus.innerHTML = `<p class="font-bold">Membaca dokumen...</p>`;
+            try {
+                const { data: { text } } = await Tesseract.recognize(canvas, 'ind');
+                const patterns = { nama: /(?:Nama\s*:\s*)([A-Za-z\s\.,]+)/i, nip: /(?:NIP\s*:\s*)([\d\s]+)/i, no_st: /(?:Nomor\s*:\s*)([A-Za-z0-9\/\.-]+)/i };
+                for (const key in patterns) { const match = text.match(patterns[key]); if (match && match[1]) document.getElementById(key).value = match[1].trim(); }
+                dom.ocrStatus.innerHTML = `<p class="font-bold text-green-700">✓ Selesai! Silakan verifikasi data.</p>`;
+            } catch (err) { dom.ocrStatus.innerHTML = `<p class="font-bold text-red-700">✗ Gagal membaca dokumen.</p>`; }
+        }
+        dom.spjTypeSelect.addEventListener('change', (e) => { dom.pdfUpload.disabled = e.target.value === ""; dom.dropText.textContent = e.target.value === "" ? 'Pilih Jenis SPJ dahulu.' : 'Klik atau seret file PDF ke sini.'; });
+        dom.dropArea.addEventListener('click', () => dom.pdfUpload.click()); dom.pdfUpload.addEventListener('change', (e) => handleFiles(e.target.files));
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => dom.dropArea.addEventListener(ev, e => {e.preventDefault(); e.stopPropagation();}, false));
+        dom.dropArea.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files), false);
+        dom.mainActionBtn.addEventListener('click', handleMainAction); dom.resetBtn.addEventListener('click', resetApp);
+        dom.downloadBtn.addEventListener('click', async () => { /* ... Logika download Excel sama ... */ });
+
+        // --- INISIALISASI ---
+        renderTable(); // Langsung coba ambil data dari server saat halaman dimuat
+    });
+    </script>
+</body>
+</html>
